@@ -1,0 +1,17 @@
+{
+  "company": {
+    "name": "",
+    "number": "",
+    "....": ""
+  },
+  "product": {
+    "name": "",
+    "classify": {
+      "first_class": "",
+      "second_class": "",
+      "third_class": ""
+    },
+    "Specifications": "",
+    "...": ""
+  }
+}
