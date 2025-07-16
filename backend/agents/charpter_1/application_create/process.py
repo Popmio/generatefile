@@ -21,10 +21,11 @@ agent = BaseAgent(
 
 async def background_task(data):
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            await asyncio.sleep(5)
+        async with httpx.AsyncClient(timeout=100.0) as client:
+            # await asyncio.sleep(5)
             logger.info(f"Connecting to {data}")
-            response = await client.post(url=data["callback_url"], json={"subtask_id":"1","status":"completed","file_url":"www.111.com"})
+            url = f"{data["callback_url"]}?token={data['token']}"
+            response = await client.post(url=url, json={"subtask_id":"1","status":"completed","file_url":"www.111.com"})
             response.raise_for_status()
     except httpx.HTTPStatusError as e:
         raise HTTPException()

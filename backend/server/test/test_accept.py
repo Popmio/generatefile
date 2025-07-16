@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 register_routes(accept_app)
 
 @pytest.mark.asyncio
-async def test_accept():
+@pytest.mark.parametrize("run_id", range(2))
+async def test_accept(run_id):
     payload = {
         "user_id": "test_user",
         "input_data": {"foo": "bar"},

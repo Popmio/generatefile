@@ -15,7 +15,6 @@ MAX_TIMEOUT = float(os.getenv("FORWARD_TIMEOUT", "30.0"))
 RETRY_WAIT_SECONDS = int(os.getenv("RETRY_WAIT_SECONDS", "10"))
 RETRY_MAX_ATTEMPTS = int(os.getenv("RETRY_MAX_ATTEMPTS", "3"))
 
-
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 API_KEYS = os.getenv("ALLOWED_API_KEYS", "secret123").split(",")
 
@@ -23,7 +22,6 @@ def verify_api_key(api_key: str = Security(API_KEY_HEADER)):
     if api_key not in API_KEYS:
         raise HTTPException(status_code=403, detail="Invalid or missing API Key")
     return api_key
-
 
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI()
@@ -46,17 +44,17 @@ retry_decorator = retry(
 )
 
 @app.post("/accept")
-@limiter.limit("10/minute")
+@limiter.limit("100/minute")
 @retry_decorator
 async def send_task(
     request: Request,
     api_key: str = Depends(verify_api_key)
 ):
-    logger.info(f"Received request from {request.client.host}")
+    logger.info(f"Received request from {request.client.host} with API Key: {api_key}")
 
     try:
+        # 尝试解析 JSON 数据并使用 Pydantic 验证
         data = await request.json()
-
         payload = StartTaskRequest(
             user_id=data["user_id"],
             input_data=data["input_data"],
@@ -65,15 +63,31 @@ async def send_task(
 
         logger.info(f"Validated task for user_id: {payload.user_id}")
 
+    except KeyError as e:
+        # 处理字段缺失的情况
+        logger.error(f"Missing expected field: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing expected field: {str(e)}"
+        )
+    except json.JSONDecodeError as e:
+        # 处理 JSON 解码错误
+        logger.error(f"Failed to decode JSON: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid JSON format: {str(e)}"
+        )
     except Exception as e:
+        # 其他未知错误
         logger.error(f"Failed to parse request data: {str(e)}")
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid request data: {e}"
+            detail=f"Invalid request data: {str(e)}"
         )
 
     headers = {"Content-Type": "application/json"}
 
+    # 向后端发送请求
     async with httpx.AsyncClient(timeout=MAX_TIMEOUT) as client:
         try:
             logger.info(f"Forwarding task to {BACKEND_API_URL}")
@@ -104,6 +118,7 @@ async def send_task(
             )
 
     data = response.json()
+    logger.info(f"Received response from backend, task_id: {data.get('task_id')}, token: {data.get('token')}")
     return {
         "status_code": response.status_code,
         "task_id": data.get("task_id"),
