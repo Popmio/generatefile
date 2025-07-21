@@ -210,18 +210,14 @@ CALLBACK_PATH = "http://localhost:8000/api/callback"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Global config
 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     AGENT_URLS = json.load(f)
 
-# FastAPI router
 router = APIRouter(prefix="/api")
 
-# Semaphore to limit concurrency (e.g., max 5 concurrent agent requests)
 semaphore = asyncio.Semaphore(5)
 
 
-# Token verification dependency
 def token_verification_dependency(token: str = Query(...), expected_user_id: str = None, expected_task_id: str = None):
     if expected_user_id and expected_task_id:
         if not verify_token(token, expected_user_id, expected_task_id):
@@ -230,7 +226,6 @@ def token_verification_dependency(token: str = Query(...), expected_user_id: str
     return token
 
 
-# Agent URL configuration dependency (reload config)
 def get_agent_urls_dependency():
     global AGENT_URLS
     try:
@@ -243,13 +238,11 @@ def get_agent_urls_dependency():
     return AGENT_URLS
 
 
-# Concurrency control dependency
 async def concurrency_control_dependency():
     async with semaphore:
         return True
 
 
-# SSE Endpoint: Used by both regular users and admins (depending on token)
 @router.get("/sse/{user_id}/{task_id}")
 async def sse_endpoint(
     user_id: str,
@@ -257,7 +250,6 @@ async def sse_endpoint(
     token: str = Depends(token_verification_dependency),  # 普通用户 token 校验
     x_admin_token: Optional[str] = Header(None)  # 管理员密钥
 ):
-    # 管理员验证：如果提供了有效的管理员密钥，则跳过普通用户的 token 校验
     if x_admin_token == os.getenv("ADMIN_SECRET_KEY"):
         logger.info(f"Admin accessed task {task_id}")
 
@@ -268,7 +260,6 @@ async def sse_endpoint(
 
         return StreamingResponse(stream(), media_type="text/event-stream")
 
-    # 普通用户：需要有效的 token 才能访问
     logger.info(f"User {user_id} accessed task {task_id}")
 
     initial_state = await task_manager.get_initial_state(task_id)
@@ -285,13 +276,10 @@ async def sse_endpoint(
 
 
 
-# Reload configuration (dependency will handle config reloading)
 @router.post("/reload-config")
 async def reload_config(agent_urls: dict = Depends(get_agent_urls_dependency)):
     return {"status": "ok"}
 
-
-# Start task (using concurrency control and token verification dependency)
 @router.post("/start-task")
 async def start_task(
         req: StartTaskRequest,
@@ -340,7 +328,6 @@ async def start_task(
                 f"Network error for user {req.user_id} while sending task {task_id} to agent {agent_type}: {e}")
             raise HTTPException(status_code=503, detail="Failed to reach agent")
 
-    # Send tasks in parallel using asyncio.gather
     tasks = [send_to_agent(agent_type) for agent_type in req.agent_types]
     try:
         await asyncio.gather(*tasks)
@@ -362,7 +349,7 @@ async def handle_callback(
         agent_type: str,
         data: CallbackData,
         token: str = Depends(token_verification_dependency),
-        _=Depends(concurrency_control_dependency)  # Ensure concurrency control
+        _=Depends(concurrency_control_dependency)
 ):
     if not token_verification_dependency(token, user_id, task_id):
         return None
@@ -370,14 +357,12 @@ async def handle_callback(
     logger.info(f"Received callback for task {task_id}, agent {agent_type}, status={data.status}")
     logger.debug(f"Full callback data: {data}")
 
-    # 校验回调数据中的状态是否有效
     valid_statuses = ["pending", "running", "completed", "failed"]
     if data.status not in valid_statuses:
         logger.warning(f"Invalid status received: {data.status}")
         raise HTTPException(status_code=400, detail=f"Invalid status: {data.status}")
 
     try:
-        # 更新子任务状态
         success = await task_manager.update_subtask_status(
             task_id=task_id,
             agent_type=agent_type,
@@ -400,18 +385,15 @@ async def handle_callback(
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
-# Get all tasks for a user
 @router.get("/tasks/{user_id}")
 async def get_tasks(user_id: str):
     return task_manager.get_user_tasks(user_id)
 
 
-# Register routes into FastAPI app
 def register_routes(app: FastAPI):
     app.include_router(router)
 
 
-# Health check endpoint
 @router.get("/health")
 def health_check():
     return {"status": "ok"}

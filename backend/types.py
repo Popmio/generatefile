@@ -18,6 +18,11 @@ class CallbackData(BaseModel):
     status: AgentState
     file_url: Optional[str] = None
 
+class ToolChoice(str, Enum):
+
+    NONE = "none",
+    Auto = "auto",
+    REQUIRED = "required"
 
 if __name__ == "__main__":
     start_task = StartTaskRequest(user_id="user1", input_data={"1":2},agent_types=["agent1", "agent2"])

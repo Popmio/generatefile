@@ -218,17 +218,17 @@ class TaskManager:
                 logger.error(f"Task {task_id} not found during status update.")
                 return False
 
-            # 更新任务的子任务状态
+
             task["agents"][agent_type]["status"] = status
             if file_url:
                 task["agents"][agent_type]["file_url"] = file_url
 
-            # 如果任务已完成，更新任务完成状态
+
             if status == "completed" and self.is_task_completed(task_id):
                 task["completed"] = True
-                self.completed_flags[task_id] = True  # 更新完成标志
+                self.completed_flags[task_id] = True
 
-            # 创建事件数据
+
             event_data = {
                 "task_id": task_id,
                 "status": task["agents"],
@@ -236,7 +236,7 @@ class TaskManager:
             }
             self.last_event_per_task[task_id] = event_data
 
-            # 触发广播事件
+
             asyncio.create_task(self.broadcast_event(task_id))
 
             return True
@@ -245,7 +245,7 @@ class TaskManager:
 
         queues = self.sse_queues.get(task_id, [])
         if not queues:
-            # 如果没有任何监听的客户端，直接返回
+
             return
 
         task = self.tasks.get(task_id)
@@ -258,14 +258,14 @@ class TaskManager:
             "completed": task["completed"]
         }
 
-        # 广播事件给所有连接的客户端
+
         for queue in queues:
             await queue.put(event_data)
 
-        # 如果任务完成后，所有连接的客户端都需要接收到 None，作为关闭信号
+
         if task["completed"]:
             for queue in queues:
-                await queue.put(None)  # 任务完成后通知所有连接关闭
+                await queue.put(None)
 
     def is_task_completed(self, task_id: str) -> bool:
         task = self.tasks.get(task_id)
@@ -284,20 +284,26 @@ class TaskManager:
         }
 
     async def listen_for_events(self, task_id: str) -> AsyncGenerator[dict, None]:
+
         if task_id not in self.sse_queues:
             self.sse_queues[task_id] = []
 
         queue = asyncio.Queue()
         self.sse_queues[task_id].append(queue)
 
-        # 如果任务已经完成，直接返回最终状态
+
         initial_state = await self.get_initial_state(task_id)
         if initial_state:
             yield initial_state
 
+            if initial_state.get("completed"):
+                logger.info(f"Task {task_id} already completed, closing SSE connection.")
+                return
+
         try:
             while True:
                 event = await queue.get()
+                logger.info(f"Event received: {event}")
                 if event is None:
                     logger.info(f"SSE connection for {task_id} closed.")
                     break

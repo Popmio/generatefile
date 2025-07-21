@@ -1,5 +1,7 @@
 import os
 import logging
+import sys
+
 from fastapi import FastAPI, Request, HTTPException, Depends, Security
 from fastapi.security import APIKeyHeader
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -28,6 +30,7 @@ app = FastAPI()
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+#限制访问，之后可以修改限制
 app.add_middleware(
     TrustedHostMiddleware,
     allowed_hosts=["*"]
@@ -40,7 +43,7 @@ retry_decorator = retry(
     stop=stop_after_attempt(RETRY_MAX_ATTEMPTS),
     wait=wait_fixed(RETRY_WAIT_SECONDS),
     retry=retry_if_exception_type((httpx.RequestError,)),
-    before_sleep=before_sleep_log(logger, logging.WARNING)
+    # before_sleep=before_sleep_log(logger, logging.WARNING)
 )
 
 @app.post("/accept")
@@ -64,21 +67,21 @@ async def send_task(
         logger.info(f"Validated task for user_id: {payload.user_id}")
 
     except KeyError as e:
-        # 处理字段缺失的情况
+
         logger.error(f"Missing expected field: {str(e)}")
         raise HTTPException(
             status_code=400,
             detail=f"Missing expected field: {str(e)}"
         )
     except json.JSONDecodeError as e:
-        # 处理 JSON 解码错误
+
         logger.error(f"Failed to decode JSON: {str(e)}")
         raise HTTPException(
             status_code=400,
             detail=f"Invalid JSON format: {str(e)}"
         )
     except Exception as e:
-        # 其他未知错误
+
         logger.error(f"Failed to parse request data: {str(e)}")
         raise HTTPException(
             status_code=400,
@@ -87,7 +90,7 @@ async def send_task(
 
     headers = {"Content-Type": "application/json"}
 
-    # 向后端发送请求
+
     async with httpx.AsyncClient(timeout=MAX_TIMEOUT) as client:
         try:
             logger.info(f"Forwarding task to {BACKEND_API_URL}")
@@ -119,8 +122,10 @@ async def send_task(
 
     data = response.json()
     logger.info(f"Received response from backend, task_id: {data.get('task_id')}, token: {data.get('token')}")
+
     return {
         "status_code": response.status_code,
+        "user_id": data.get('user_id'),
         "task_id": data.get("task_id"),
         "token": data.get("token")
     }
